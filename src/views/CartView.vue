@@ -43,7 +43,7 @@
 import { ref, onMounted } from 'vue';
 import { getAuth, onAuthStateChanged, signOut } from "firebase/auth";
 import {
-  doc, updateDoc, getDoc
+  doc, updateDoc, getDoc, collection
 } from 'firebase/firestore'
 import { db } from '@/firebase'
 import { useRouter } from "vue-router"
@@ -66,6 +66,7 @@ onMounted(async () => {
 const userCart = ref([])
 const auth = getAuth();
 const isLoggedIn = ref(false);
+
 let totalCart
 
 const namaPembeli = ref("");
@@ -77,9 +78,10 @@ const pesan = ref("")
 const kirimBarang = async () => {
   const formattedCart = userCart.value.map(cartItem => ({
     id: cartItem.id,
-    namaBarang: cartItem.namaBarang.slice(0,20),
+    namaBarang: cartItem.namaBarang.slice(0, 20),
     Harga: cartItem.harga,
-    quantity: cartItem.quantity
+    quantity: cartItem.quantity,
+    linkImage: cartItem.linkImage
   }));
   const orderCode = generateOrderCode();
 
@@ -88,7 +90,9 @@ const kirimBarang = async () => {
     id: cartItem.id,
     price: cartItem.Harga,  // Sesuaikan dengan nama properti yang diharapkan
     quantity: cartItem.quantity,
-    name: cartItem.namaBarang
+    name: cartItem.namaBarang,
+    total: cartItem.quantity * cartItem.Harga,
+    linkImage: cartItem.linkImage
   }));
 
   let parameter = {
@@ -116,16 +120,74 @@ const kirimBarang = async () => {
 
   // Tambahkan item details ke dalam parameter dengan key yang sudah disediakan
   parameter["item_details"] = itemDetails;
+  const userDocRef = doc(db, "user", emailUser)
 
+  const dataBarangCollectionRef = collection(db, "dataBarang");
+
+  // Membuat array promise untuk setiap pengambilan data barang
+  const promises = itemDetails.map(async (item) => {
+    const docRef = doc(dataBarangCollectionRef, item.id);
+    const docSnap = await getDoc(docRef);
+    return { docRef, docData: docSnap.data(), quantity: item.quantity };
+  });
+
+  // Menunggu semua promise selesai
+  const results = await Promise.all(promises);
+
+  results.forEach((result) => {
+    const { docRef, docData, quantity } = result;
+    const updatedStock = docData.stok - quantity;
+
+    if (updatedStock >= 0) {
+      // Jika stok cukup, perbarui itemDetails
+      const updatedItem = itemDetails.find((item) => item.id === docData.id);
+      // updatedItem.quantity = updatedStock;
+
+      // Perbarui stok di dokumen barang
+      updateDoc(docRef, { stok: updatedStock });
+    } else {
+      // Stok tidak mencukupi, mungkin tambahkan penanganan kesalahan atau batalkan transaksi
+      throw new Error(`Stok tidak mencukupi untuk barang dengan ID: ${docData.id}`);
+    }
+  });
   try {
     // Menggunakan await untuk menunggu respons dari server
     const response = await axios.post('http://localhost:3000/getTransactionToken', parameter);
 
     const transactionToken = response.data.transactionToken;
     console.log('transactionToken:', transactionToken);
-    window.snap.pay(transactionToken);
 
-    // Melakukan operasi berikutnya, misalnya menampilkan pesan atau melakukan operasi lainnya.
+    const userDoc = await getDoc(userDocRef)
+    if (userDoc.exists()) {
+      const dataBeliArray = userDoc.data().dataBeli || [];
+
+      const dataBeliCart = {
+        orderId: orderCode,
+        name: namaPembeli.value,
+        barang: itemDetails,
+        statusBayar: false,
+        statusPengiriman: false,
+        alamat: alamatRumahPembeli.value,
+        nomorWA: nomorWaPembeli.value,
+        email: emailPembeli.value
+      }
+
+      dataBeliCart.total = dataBeliCart.barang.reduce((sum, item) => sum + item.total, 0);
+
+      const updatedDataBeli = [...dataBeliArray, dataBeliCart];
+
+      // Update the "dataBeli" field in the user document
+      await updateDoc(userDocRef, { dataBeli: updatedDataBeli });
+
+      console.log("User document updated successfully!");
+
+      await updateDoc(userDocRef, { cart: [] });
+
+      console.log("Cart field cleared successfully!");
+
+      window.snap.pay(transactionToken);
+    }
+
   } catch (error) {
     console.error('Error getting transaction token:', error);
   }

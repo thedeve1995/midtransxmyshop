@@ -6,6 +6,7 @@ import RegisterView from '../views/RegisterView.vue'
 import SettingView from '../views/SettingView.vue'
 import AdminView from '../views/AdminView.vue'
 import CartView from '../views/CartView.vue'
+import StatusView from '../views/StatusView.vue'
 
 const router = createRouter({
   history: createWebHistory(import.meta.env.BASE_URL),
@@ -39,6 +40,11 @@ const router = createRouter({
       path: '/cart',
       name: 'cart',
       component: CartView
+    },
+    {
+      path: '/status',
+      name: 'status',
+      component: StatusView
     }
     // {
     //   path: '/about',

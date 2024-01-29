@@ -103,6 +103,7 @@ const handleSignOut = () => {
       <nav id="nav">
         
         <RouterLink to="/login" v-if="isLoggedOut">Login</RouterLink>
+        <RouterLink to="/status" >Status</RouterLink>
 
         <div style="display: flex;gap: 10px;align-items: center;">
           <RouterLink style="background-color: rgb(245, 136, 20);padding: 5px;color: white;border-radius: 5px;"
